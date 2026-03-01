@@ -44,3 +44,8 @@ class MeSerializer(serializers.ModelSerializer):
     class Meta:
         model = RegistryUser
         fields = ('user_id', 'username', 'email', 'role', 'is_active', 'created_at', 'last_login_at')
+
+
+class LoginResponseSerializer(serializers.Serializer):
+    access = serializers.CharField(read_only=True)
+    refresh = serializers.CharField(read_only=True)
