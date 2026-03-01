@@ -10,10 +10,15 @@ class RegistryJWTAuthentication(authentication.BaseAuthentication):
         self.jwt_auth = JWTAuthentication()
 
     def authenticate(self, request):
-        validated = self.jwt_auth.authenticate(request)
-        if not validated:
+        header = self.jwt_auth.get_header(request)
+        if header is None:
             return None
-        token_user, token = validated
+
+        raw_token = self.jwt_auth.get_raw_token(header)
+        if raw_token is None:
+            return None
+
+        token = self.jwt_auth.get_validated_token(raw_token)
         user_id = token.get('user_id')
         if not user_id:
             raise exceptions.AuthenticationFailed(_('Invalid token payload.'))
