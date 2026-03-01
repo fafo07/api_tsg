@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -96,10 +97,20 @@ class ManifestationDetailView(generics.RetrieveUpdateAPIView):
 
 
 class ManifestationFindingsView(APIView):
+    @extend_schema(responses={200: ManifestationFindingSerializer(many=True)})
     def get(self, request, manifestation_id):
         findings = ManifestationFinding.objects.filter(manifestation_id=manifestation_id)
         return Response(ManifestationFindingSerializer(findings, many=True).data)
 
+    @extend_schema(
+        request=inline_serializer(
+            name='ManifestationFindingsReplaceRequest',
+            fields={
+                'findings': ManifestationFindingBulkItemSerializer(many=True),
+            },
+        ),
+        responses={200: ManifestationFindingSerializer(many=True)},
+    )
     def put(self, request, manifestation_id):
         manifestation = get_object_or_404(Manifestation, manifestation_id=manifestation_id)
         items = request.data.get('findings', [])
@@ -191,6 +202,7 @@ class PatientContactListView(generics.ListAPIView):
 
 
 class PatientContactUpsertDeleteView(APIView):
+    @extend_schema(request=PatientContactSerializer, responses={201: PatientContactSerializer})
     def post(self, request, patient_id, contact_id):
         data = {**request.data, 'patient': patient_id, 'contact': contact_id}
         serializer = PatientContactSerializer(data=data)
@@ -198,6 +210,7 @@ class PatientContactUpsertDeleteView(APIView):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(request=PatientContactSerializer, responses={200: PatientContactSerializer})
     def put(self, request, patient_id, contact_id):
         instance = get_object_or_404(PatientContact, patient_id=patient_id, contact_id=contact_id)
         serializer = PatientContactSerializer(instance, data={**request.data, 'patient': patient_id, 'contact': contact_id}, partial=True)
@@ -205,6 +218,7 @@ class PatientContactUpsertDeleteView(APIView):
         serializer.save()
         return Response(serializer.data)
 
+    @extend_schema(responses={204: None})
     def delete(self, request, patient_id, contact_id):
         instance = get_object_or_404(PatientContact, patient_id=patient_id, contact_id=contact_id)
         instance.delete()

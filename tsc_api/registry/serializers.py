@@ -131,7 +131,7 @@ class ContactSerializer(serializers.ModelSerializer):
 class PatientContactSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientContact
-        fields = '__all__'
+        fields = ('patient', 'contact', 'is_primary')
 
     def create(self, validated_data):
         with transaction.atomic():
