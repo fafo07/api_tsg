@@ -164,3 +164,11 @@ class RegistryUser(models.Model):
     class Meta:
         managed = False
         db_table = 'users'
+
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
