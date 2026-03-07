@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'tsc_api.authn',
     'tsc_api.registry',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
@@ -27,6 +28,12 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
+]
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:4200",
+    "http://127.0.0.1:4200",
 ]
 
 ROOT_URLCONF = 'tsc_api.core.urls'
