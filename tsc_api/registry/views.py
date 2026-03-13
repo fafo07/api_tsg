@@ -1,9 +1,14 @@
+import logging
+
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+
+logger = logging.getLogger(__name__)
 
 from tsc_api.registry.models import (
     AdverseEvent,
@@ -119,6 +124,7 @@ class ManifestationFindingsView(APIView):
 
         validated = ser.validated_data
         codes = [item['finding_code'] for item in validated]
+        logger.debug('Manifestation findings bulk replace requested. manifestation_id=%s codes=%s', manifestation_id, codes)
         catalog = {f.finding_code: f for f in FindingCatalog.objects.filter(finding_code__in=codes)}
 
         for code in codes:
@@ -129,7 +135,9 @@ class ManifestationFindingsView(APIView):
                 return Response({'detail': f'Finding {code} does not belong to manifestation system.'}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            ManifestationFinding.objects.filter(manifestation=manifestation).exclude(finding_code__in=codes).delete()
+            delete_qs = ManifestationFinding.objects.filter(manifestation=manifestation).exclude(finding_id__in=codes)
+            logger.debug('Manifestation findings to delete. manifestation_id=%s delete_count=%s', manifestation_id, delete_qs.count())
+            delete_qs.delete()
             for item in validated:
                 ManifestationFinding.objects.update_or_create(
                     manifestation=manifestation,
