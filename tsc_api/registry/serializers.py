@@ -256,3 +256,7 @@ class PatientContactCreateWithContactSerializer(serializers.Serializer):
 class ManifestationFindingBulkItemSerializer(serializers.Serializer):
     finding_code = serializers.CharField()
     is_present = serializers.BooleanField()
+
+
+class ManifestationFindingsReplaceSerializer(serializers.Serializer):
+    findings = ManifestationFindingBulkItemSerializer(many=True, required=True)

@@ -2,7 +2,7 @@ import logging
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, inline_serializer
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -37,6 +37,7 @@ from tsc_api.registry.serializers import (
     GeneticTestUpdateSerializer,
     ManifestationCreateSerializer,
     ManifestationFindingBulkItemSerializer,
+    ManifestationFindingsReplaceSerializer,
     ManifestationFindingSerializer,
     ManifestationReadSerializer,
     ManifestationUpdateSerializer,
@@ -115,7 +116,25 @@ class PatientManifestationListCreateView(generics.ListCreateAPIView):
         return Manifestation.objects.filter(patient_id=self.kwargs['patient_id']).order_by('-evaluation_date')
 
     def perform_create(self, serializer):
+        logger.debug(
+            'Create manifestation payload. patient_id=%s payload=%s',
+            self.kwargs['patient_id'],
+            dict(self.request.data),
+        )
         serializer.save(patient_id=self.kwargs['patient_id'])
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning(
+                'Create manifestation serializer errors. patient_id=%s errors=%s payload=%s',
+                kwargs.get('patient_id'),
+                serializer.errors,
+                dict(request.data),
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return super().create(request, *args, **kwargs)
 
 
 class ManifestationDetailView(generics.RetrieveUpdateAPIView):
@@ -125,6 +144,29 @@ class ManifestationDetailView(generics.RetrieveUpdateAPIView):
     def get_serializer_class(self):
         return ManifestationReadSerializer if self.request.method == 'GET' else ManifestationUpdateSerializer
 
+    def update(self, request, *args, **kwargs):
+        logger.debug(
+            'Update manifestation payload. manifestation_id=%s payload=%s',
+            kwargs.get('manifestation_id'),
+            dict(request.data),
+        )
+        serializer = self.get_serializer(self.get_object(), data=request.data, partial=kwargs.get('partial', False))
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning(
+                'Update manifestation serializer errors. manifestation_id=%s errors=%s payload=%s',
+                kwargs.get('manifestation_id'),
+                serializer.errors,
+                dict(request.data),
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+    def patch(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
+
 
 class ManifestationFindingsView(APIView):
     @extend_schema(responses={200: ManifestationFindingSerializer(many=True)})
@@ -133,19 +175,34 @@ class ManifestationFindingsView(APIView):
         return Response(ManifestationFindingSerializer(findings, many=True).data)
 
     @extend_schema(
-        request=inline_serializer(
-            name='ManifestationFindingsReplaceRequest',
-            fields={
-                'findings': ManifestationFindingBulkItemSerializer(many=True),
-            },
-        ),
+        request=ManifestationFindingsReplaceSerializer,
         responses={200: ManifestationFindingSerializer(many=True)},
     )
     def put(self, request, manifestation_id):
+        logger.debug('PUT manifestation findings payload. manifestation_id=%s payload=%s', manifestation_id, dict(request.data))
         manifestation = get_object_or_404(Manifestation, manifestation_id=manifestation_id)
-        items = request.data.get('findings', [])
+        payload_serializer = ManifestationFindingsReplaceSerializer(data=request.data)
+        payload_serializer.is_valid(raise_exception=False)
+        if payload_serializer.errors:
+            logger.warning(
+                'PUT manifestation findings payload errors. manifestation_id=%s errors=%s payload=%s',
+                manifestation_id,
+                payload_serializer.errors,
+                dict(request.data),
+            )
+            return Response(payload_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        items = payload_serializer.validated_data['findings']
         ser = ManifestationFindingBulkItemSerializer(data=items, many=True)
-        ser.is_valid(raise_exception=True)
+        ser.is_valid(raise_exception=False)
+        if ser.errors:
+            logger.warning(
+                'PUT manifestation findings serializer errors. manifestation_id=%s errors=%s payload=%s',
+                manifestation_id,
+                ser.errors,
+                items,
+            )
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
         validated = ser.validated_data
         codes = [item['finding_code'] for item in validated]
@@ -213,7 +270,27 @@ class PatientManifestationTreatmentCreateView(generics.CreateAPIView):
         return context
 
     def perform_create(self, serializer):
+        logger.debug(
+            'Create treatment payload. patient_id=%s manifestation_id=%s payload=%s',
+            self.kwargs['patient_id'],
+            self.kwargs['manifestation_id'],
+            dict(self.request.data),
+        )
         serializer.save(patient_id=self.kwargs['patient_id'])
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning(
+                'Create treatment serializer errors. patient_id=%s manifestation_id=%s errors=%s payload=%s',
+                kwargs.get('patient_id'),
+                kwargs.get('manifestation_id'),
+                serializer.errors,
+                dict(request.data),
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return super().create(request, *args, **kwargs)
 
 
 class TreatmentDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -222,6 +299,25 @@ class TreatmentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_serializer_class(self):
         return TreatmentReadSerializer if self.request.method == 'GET' else TreatmentUpdateSerializer
+
+    def update(self, request, *args, **kwargs):
+        logger.debug('Update treatment payload. treatment_id=%s payload=%s', kwargs.get('treatment_id'), dict(request.data))
+        serializer = self.get_serializer(self.get_object(), data=request.data, partial=kwargs.get('partial', False))
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning(
+                'Update treatment serializer errors. treatment_id=%s errors=%s payload=%s',
+                kwargs.get('treatment_id'),
+                serializer.errors,
+                dict(request.data),
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+    def patch(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
 
 
 class PatientAdverseEventListCreateView(generics.ListCreateAPIView):
@@ -306,11 +402,29 @@ class PatientContactUpsertDeleteView(APIView):
 
     @extend_schema(request=PatientContactUpdateSerializer, responses={200: PatientContactReadSerializer})
     def put(self, request, patient_id, contact_id):
+        logger.debug(
+            'Update patient contact relation payload. patient_id=%s contact_id=%s payload=%s',
+            patient_id,
+            contact_id,
+            dict(request.data),
+        )
         instance = get_object_or_404(PatientContact, patient_id=patient_id, contact_id=contact_id)
         serializer = PatientContactUpdateSerializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning(
+                'Update patient contact relation serializer errors. patient_id=%s contact_id=%s errors=%s payload=%s',
+                patient_id,
+                contact_id,
+                serializer.errors,
+                dict(request.data),
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         updated = serializer.save()
         return Response(PatientContactReadSerializer(updated).data)
+
+    def patch(self, request, patient_id, contact_id):
+        return self.put(request, patient_id, contact_id)
 
     @extend_schema(responses={204: None})
     def delete(self, request, patient_id, contact_id):
