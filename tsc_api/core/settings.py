@@ -107,7 +107,7 @@ REST_FRAMEWORK = {
         'tsc_api.authn.authentication.RegistryJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
+        'tsc_api.authn.permissions.RoleAccessPermission',
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -115,7 +115,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_MINUTES', '30'))),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_MINUTES', '15'))),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_DAYS', '7'))),
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
@@ -125,8 +125,8 @@ SIMPLE_JWT = {
 SPECTACULAR_SETTINGS = {
     'TITLE': 'TSC Registry API',
     'VERSION': '1.0.0',
-    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
-    'SERVE_AUTHENTICATION': [],
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'] if DEBUG else ['rest_framework.permissions.IsAuthenticated'],
+    'SERVE_AUTHENTICATION': [] if DEBUG else ['tsc_api.authn.authentication.RegistryJWTAuthentication'],
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

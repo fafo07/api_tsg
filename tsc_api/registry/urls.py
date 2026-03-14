@@ -11,7 +11,7 @@ from tsc_api.registry.views import (
     ManifestationDetailView,
     ManifestationFindingsView,
     PatientAdverseEventListCreateView,
-    PatientContactListView,
+    PatientContactListCreateView,
     PatientContactUpsertDeleteView,
     PatientGeneticTestListCreateView,
     PatientListCreateView,
@@ -43,7 +43,7 @@ urlpatterns = [
     path('adverse-events/<int:ae_id>', AdverseEventDetailView.as_view(), name='adverse-event-detail'),
     path('contacts', ContactCreateView.as_view(), name='contacts-post'),
     path('contacts/<int:contact_id>', ContactDetailView.as_view(), name='contacts-detail'),
-    path('patients/<int:patient_id>/contacts', PatientContactListView.as_view(), name='patient-contacts-list'),
+    path('patients/<int:patient_id>/contacts', PatientContactListCreateView.as_view(), name='patient-contacts-list-create'),
     path('patients/<int:patient_id>/contacts/<int:contact_id>', PatientContactUpsertDeleteView.as_view(), name='patient-contacts-upsert-delete'),
 ]
 

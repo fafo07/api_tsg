@@ -24,18 +24,33 @@ from tsc_api.registry.models import (
     Treatment,
 )
 from tsc_api.registry.serializers import (
-    AdverseEventSerializer,
-    ContactSerializer,
+    AdverseEventCreateSerializer,
+    AdverseEventReadSerializer,
+    AdverseEventUpdateSerializer,
+    ContactCreateSerializer,
+    ContactReadSerializer,
+    ContactUpdateSerializer,
     CountrySerializer,
     FindingCatalogSerializer,
-    GeneticTestSerializer,
+    GeneticTestCreateSerializer,
+    GeneticTestReadSerializer,
+    GeneticTestUpdateSerializer,
+    ManifestationCreateSerializer,
     ManifestationFindingBulkItemSerializer,
     ManifestationFindingSerializer,
-    ManifestationSerializer,
-    PatientContactSerializer,
-    PatientSerializer,
+    ManifestationReadSerializer,
+    ManifestationUpdateSerializer,
+    PatientContactCreateSerializer,
+    PatientContactCreateWithContactSerializer,
+    PatientContactReadSerializer,
+    PatientContactUpdateSerializer,
+    PatientCreateSerializer,
+    PatientReadSerializer,
+    PatientUpdateSerializer,
     SystemSerializer,
-    TreatmentSerializer,
+    TreatmentCreateSerializer,
+    TreatmentReadSerializer,
+    TreatmentUpdateSerializer,
 )
 
 
@@ -60,17 +75,22 @@ class FindingViewSet(viewsets.ModelViewSet):
 
 class PatientListCreateView(generics.ListCreateAPIView):
     queryset = Patient.objects.all().order_by('patient_id')
-    serializer_class = PatientSerializer
+
+    def get_serializer_class(self):
+        return PatientReadSerializer if self.request.method == 'GET' else PatientCreateSerializer
 
 
 class PatientRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     queryset = Patient.objects.all()
-    serializer_class = PatientSerializer
     lookup_field = 'patient_id'
+
+    def get_serializer_class(self):
+        return PatientReadSerializer if self.request.method == 'GET' else PatientUpdateSerializer
 
 
 class PatientGeneticTestListCreateView(generics.ListCreateAPIView):
-    serializer_class = GeneticTestSerializer
+    def get_serializer_class(self):
+        return GeneticTestReadSerializer if self.request.method == 'GET' else GeneticTestCreateSerializer
 
     def get_queryset(self):
         return GeneticTest.objects.filter(patient_id=self.kwargs['patient_id']).order_by('-test_date')
@@ -81,12 +101,15 @@ class PatientGeneticTestListCreateView(generics.ListCreateAPIView):
 
 class GeneticTestDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = GeneticTest.objects.all()
-    serializer_class = GeneticTestSerializer
     lookup_field = 'test_id'
+
+    def get_serializer_class(self):
+        return GeneticTestReadSerializer if self.request.method == 'GET' else GeneticTestUpdateSerializer
 
 
 class PatientManifestationListCreateView(generics.ListCreateAPIView):
-    serializer_class = ManifestationSerializer
+    def get_serializer_class(self):
+        return ManifestationReadSerializer if self.request.method == 'GET' else ManifestationCreateSerializer
 
     def get_queryset(self):
         return Manifestation.objects.filter(patient_id=self.kwargs['patient_id']).order_by('-evaluation_date')
@@ -97,8 +120,10 @@ class PatientManifestationListCreateView(generics.ListCreateAPIView):
 
 class ManifestationDetailView(generics.RetrieveUpdateAPIView):
     queryset = Manifestation.objects.all()
-    serializer_class = ManifestationSerializer
     lookup_field = 'manifestation_id'
+
+    def get_serializer_class(self):
+        return ManifestationReadSerializer if self.request.method == 'GET' else ManifestationUpdateSerializer
 
 
 class ManifestationFindingsView(APIView):
@@ -124,6 +149,8 @@ class ManifestationFindingsView(APIView):
 
         validated = ser.validated_data
         codes = [item['finding_code'] for item in validated]
+        if len(codes) != len(set(codes)):
+            return Response({'detail': 'Duplicate finding_code values are not allowed.'}, status=status.HTTP_400_BAD_REQUEST)
         logger.debug('Manifestation findings bulk replace requested. manifestation_id=%s codes=%s', manifestation_id, codes)
         catalog = {f.finding_code: f for f in FindingCatalog.objects.filter(finding_code__in=codes)}
 
@@ -135,29 +162,49 @@ class ManifestationFindingsView(APIView):
                 return Response({'detail': f'Finding {code} does not belong to manifestation system.'}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
+            current_qs = ManifestationFinding.objects.filter(manifestation=manifestation)
+            logger.debug('Manifestation findings current queryset. manifestation_id=%s current_total=%s', manifestation_id, current_qs.count())
             delete_qs = ManifestationFinding.objects.filter(manifestation=manifestation).exclude(finding_id__in=codes)
             logger.debug('Manifestation findings to delete. manifestation_id=%s delete_count=%s', manifestation_id, delete_qs.count())
             delete_qs.delete()
+            created_count = 0
+            updated_count = 0
             for item in validated:
-                ManifestationFinding.objects.update_or_create(
-                    manifestation=manifestation,
-                    finding=catalog[item['finding_code']],
-                    defaults={'is_present': item['is_present']},
-                )
+                finding = catalog[item['finding_code']]
+                instance = ManifestationFinding.objects.filter(manifestation=manifestation, finding=finding).first()
+                if instance:
+                    if instance.is_present != item['is_present']:
+                        instance.is_present = item['is_present']
+                        instance.save(update_fields=['is_present'])
+                    updated_count += 1
+                else:
+                    ManifestationFinding.objects.create(
+                        manifestation=manifestation,
+                        finding=finding,
+                        is_present=item['is_present'],
+                    )
+                    created_count += 1
+
+            logger.debug(
+                'Manifestation findings upsert summary. manifestation_id=%s created=%s updated=%s',
+                manifestation_id,
+                created_count,
+                updated_count,
+            )
 
         results = ManifestationFinding.objects.filter(manifestation=manifestation)
         return Response(ManifestationFindingSerializer(results, many=True).data)
 
 
 class PatientTreatmentListView(generics.ListAPIView):
-    serializer_class = TreatmentSerializer
+    serializer_class = TreatmentReadSerializer
 
     def get_queryset(self):
         return Treatment.objects.filter(patient_id=self.kwargs['patient_id']).order_by('-start_date')
 
 
 class PatientManifestationTreatmentCreateView(generics.CreateAPIView):
-    serializer_class = TreatmentSerializer
+    serializer_class = TreatmentCreateSerializer
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -171,12 +218,20 @@ class PatientManifestationTreatmentCreateView(generics.CreateAPIView):
 
 class TreatmentDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Treatment.objects.all()
-    serializer_class = TreatmentSerializer
     lookup_field = 'treatment_id'
+
+    def get_serializer_class(self):
+        return TreatmentReadSerializer if self.request.method == 'GET' else TreatmentUpdateSerializer
 
 
 class PatientAdverseEventListCreateView(generics.ListCreateAPIView):
-    serializer_class = AdverseEventSerializer
+    def get_serializer_class(self):
+        return AdverseEventReadSerializer if self.request.method == 'GET' else AdverseEventCreateSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['patient_id'] = self.kwargs['patient_id']
+        return context
 
     def get_queryset(self):
         return AdverseEvent.objects.filter(patient_id=self.kwargs['patient_id']).order_by('-event_date')
@@ -187,44 +242,75 @@ class PatientAdverseEventListCreateView(generics.ListCreateAPIView):
 
 class AdverseEventDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = AdverseEvent.objects.all()
-    serializer_class = AdverseEventSerializer
     lookup_field = 'ae_id'
+
+    def get_serializer_class(self):
+        return AdverseEventReadSerializer if self.request.method == 'GET' else AdverseEventUpdateSerializer
 
 
 class ContactCreateView(generics.CreateAPIView):
     queryset = Contact.objects.all()
-    serializer_class = ContactSerializer
+    serializer_class = ContactCreateSerializer
 
 
 class ContactDetailView(generics.RetrieveUpdateAPIView):
     queryset = Contact.objects.all()
-    serializer_class = ContactSerializer
     lookup_field = 'contact_id'
 
+    def get_serializer_class(self):
+        return ContactReadSerializer if self.request.method == 'GET' else ContactUpdateSerializer
 
-class PatientContactListView(generics.ListAPIView):
-    serializer_class = PatientContactSerializer
+
+class PatientContactListCreateView(generics.ListCreateAPIView):
+    serializer_class = PatientContactReadSerializer
 
     def get_queryset(self):
         return PatientContact.objects.filter(patient_id=self.kwargs['patient_id']).select_related('contact')
 
+    @extend_schema(request=PatientContactCreateWithContactSerializer, responses={201: PatientContactReadSerializer})
+    def post(self, request, patient_id):
+        payload = PatientContactCreateWithContactSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        patient = get_object_or_404(Patient, patient_id=patient_id)
+
+        with transaction.atomic():
+            contact_serializer = ContactCreateSerializer(data={
+                'full_name': payload.validated_data['full_name'],
+                'relationship': payload.validated_data.get('relationship'),
+                'phone': payload.validated_data.get('phone'),
+                'email': payload.validated_data.get('email'),
+                'address': payload.validated_data.get('address'),
+                'notes': payload.validated_data.get('notes'),
+            })
+            contact_serializer.is_valid(raise_exception=True)
+            contact = contact_serializer.save()
+            relation_serializer = PatientContactCreateSerializer(
+                data={'is_primary': payload.validated_data.get('is_primary', False)},
+                context={'patient': patient, 'contact': contact},
+            )
+            relation_serializer.is_valid(raise_exception=True)
+            relation = relation_serializer.save()
+
+        return Response(PatientContactReadSerializer(relation).data, status=status.HTTP_201_CREATED)
+
 
 class PatientContactUpsertDeleteView(APIView):
-    @extend_schema(request=PatientContactSerializer, responses={201: PatientContactSerializer})
+    @extend_schema(request=PatientContactCreateSerializer, responses={201: PatientContactReadSerializer})
     def post(self, request, patient_id, contact_id):
-        data = {**request.data, 'patient': patient_id, 'contact': contact_id}
-        serializer = PatientContactSerializer(data=data)
+        patient = get_object_or_404(Patient, patient_id=patient_id)
+        contact = get_object_or_404(Contact, contact_id=contact_id)
+        serializer = PatientContactCreateSerializer(data=request.data, context={'patient': patient, 'contact': contact})
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        relation = serializer.save()
+        return Response(PatientContactReadSerializer(relation).data, status=status.HTTP_201_CREATED)
 
-    @extend_schema(request=PatientContactSerializer, responses={200: PatientContactSerializer})
+    @extend_schema(request=PatientContactUpdateSerializer, responses={200: PatientContactReadSerializer})
     def put(self, request, patient_id, contact_id):
         instance = get_object_or_404(PatientContact, patient_id=patient_id, contact_id=contact_id)
-        serializer = PatientContactSerializer(instance, data={**request.data, 'patient': patient_id, 'contact': contact_id}, partial=True)
+        serializer = PatientContactUpdateSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        updated = serializer.save()
+        return Response(PatientContactReadSerializer(updated).data)
 
     @extend_schema(responses={204: None})
     def delete(self, request, patient_id, contact_id):
