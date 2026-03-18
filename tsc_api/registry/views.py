@@ -333,7 +333,25 @@ class PatientAdverseEventListCreateView(generics.ListCreateAPIView):
         return AdverseEvent.objects.filter(patient_id=self.kwargs['patient_id']).order_by('-event_date')
 
     def perform_create(self, serializer):
+        logger.debug(
+            'Create adverse event payload. patient_id=%s payload=%s',
+            self.kwargs['patient_id'],
+            dict(self.request.data),
+        )
         serializer.save(patient_id=self.kwargs['patient_id'])
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning(
+                'Create adverse event serializer errors. patient_id=%s errors=%s payload=%s',
+                kwargs.get('patient_id'),
+                serializer.errors,
+                dict(request.data),
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return super().create(request, *args, **kwargs)
 
 
 class AdverseEventDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -343,10 +361,38 @@ class AdverseEventDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_serializer_class(self):
         return AdverseEventReadSerializer if self.request.method == 'GET' else AdverseEventUpdateSerializer
 
+    def update(self, request, *args, **kwargs):
+        logger.debug('Update adverse event payload. ae_id=%s payload=%s', kwargs.get('ae_id'), dict(request.data))
+        serializer = self.get_serializer(self.get_object(), data=request.data, partial=kwargs.get('partial', False))
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning(
+                'Update adverse event serializer errors. ae_id=%s errors=%s payload=%s',
+                kwargs.get('ae_id'),
+                serializer.errors,
+                dict(request.data),
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+    def patch(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
+
 
 class ContactCreateView(generics.CreateAPIView):
     queryset = Contact.objects.all()
     serializer_class = ContactCreateSerializer
+
+    def create(self, request, *args, **kwargs):
+        logger.debug('Create contact payload. payload=%s', dict(request.data))
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning('Create contact serializer errors. errors=%s payload=%s', serializer.errors, dict(request.data))
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return super().create(request, *args, **kwargs)
 
 
 class ContactDetailView(generics.RetrieveUpdateAPIView):
@@ -355,6 +401,25 @@ class ContactDetailView(generics.RetrieveUpdateAPIView):
 
     def get_serializer_class(self):
         return ContactReadSerializer if self.request.method == 'GET' else ContactUpdateSerializer
+
+    def update(self, request, *args, **kwargs):
+        logger.debug('Update contact payload. contact_id=%s payload=%s', kwargs.get('contact_id'), dict(request.data))
+        serializer = self.get_serializer(self.get_object(), data=request.data, partial=kwargs.get('partial', False))
+        serializer.is_valid(raise_exception=False)
+        if serializer.errors:
+            logger.warning(
+                'Update contact serializer errors. contact_id=%s errors=%s payload=%s',
+                kwargs.get('contact_id'),
+                serializer.errors,
+                dict(request.data),
+            )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+    def patch(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
 
 
 class PatientContactListCreateView(generics.ListCreateAPIView):
