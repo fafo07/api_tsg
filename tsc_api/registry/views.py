@@ -80,6 +80,13 @@ class PatientListCreateView(generics.ListCreateAPIView):
     def get_serializer_class(self):
         return PatientReadSerializer if self.request.method == 'GET' else PatientCreateSerializer
 
+    @extend_schema(request=PatientCreateSerializer, responses={201: PatientReadSerializer})
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        patient = serializer.save()
+        return Response(PatientReadSerializer(patient).data, status=status.HTTP_201_CREATED)
+
 
 class PatientRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     queryset = Patient.objects.all()
@@ -385,6 +392,7 @@ class ContactCreateView(generics.CreateAPIView):
     queryset = Contact.objects.all()
     serializer_class = ContactCreateSerializer
 
+    @extend_schema(request=ContactCreateSerializer, responses={201: ContactReadSerializer})
     def create(self, request, *args, **kwargs):
         logger.debug('Create contact payload. payload=%s', dict(request.data))
         serializer = self.get_serializer(data=request.data)
