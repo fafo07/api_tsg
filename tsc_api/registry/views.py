@@ -80,12 +80,15 @@ class PatientListCreateView(generics.ListCreateAPIView):
     def get_serializer_class(self):
         return PatientReadSerializer if self.request.method == 'GET' else PatientCreateSerializer
 
-    @extend_schema(request=PatientCreateSerializer, responses={201: PatientReadSerializer})
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         patient = serializer.save()
         return Response(PatientReadSerializer(patient).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=PatientCreateSerializer, responses={201: PatientReadSerializer})
+    def post(self, request, *args, **kwargs):
+        return self.create(request, *args, **kwargs)
 
 
 class PatientRetrieveUpdateView(generics.RetrieveUpdateAPIView):
@@ -392,7 +395,6 @@ class ContactCreateView(generics.CreateAPIView):
     queryset = Contact.objects.all()
     serializer_class = ContactCreateSerializer
 
-    @extend_schema(request=ContactCreateSerializer, responses={201: ContactReadSerializer})
     def create(self, request, *args, **kwargs):
         logger.debug('Create contact payload. payload=%s', dict(request.data))
         serializer = self.get_serializer(data=request.data)
@@ -402,6 +404,10 @@ class ContactCreateView(generics.CreateAPIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         contact = serializer.save()
         return Response(ContactReadSerializer(contact).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=ContactCreateSerializer, responses={201: ContactReadSerializer})
+    def post(self, request, *args, **kwargs):
+        return self.create(request, *args, **kwargs)
 
 
 class ContactDetailView(generics.RetrieveUpdateAPIView):
@@ -440,7 +446,6 @@ class PatientContactListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return PatientContact.objects.filter(patient_id=self.kwargs['patient_id']).select_related('contact')
 
-    @extend_schema(request=PatientContactCreateWithContactSerializer, responses={201: PatientContactReadSerializer})
     def create(self, request, *args, **kwargs):
         patient_id = kwargs['patient_id']
         payload = self.get_serializer(data=request.data)
@@ -466,6 +471,10 @@ class PatientContactListCreateView(generics.ListCreateAPIView):
             relation = relation_serializer.save()
 
         return Response(PatientContactReadSerializer(relation).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=PatientContactCreateWithContactSerializer, responses={201: PatientContactReadSerializer})
+    def post(self, request, *args, **kwargs):
+        return self.create(request, *args, **kwargs)
 
 
 class PatientContactUpsertDeleteView(APIView):
@@ -506,6 +515,7 @@ class PatientContactUpsertDeleteView(APIView):
 
     @extend_schema(responses={204: None})
     def delete(self, request, patient_id, contact_id):
-        instance = get_object_or_404(PatientContact, patient_id=patient_id, contact_id=contact_id)
-        instance.delete()
+        deleted_count, _ = PatientContact.objects.filter(patient_id=patient_id, contact_id=contact_id).delete()
+        if deleted_count == 0:
+            return Response(status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
