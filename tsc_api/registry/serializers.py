@@ -217,9 +217,15 @@ class PatientContactReadSerializer(serializers.ModelSerializer):
 class PatientContactCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientContact
-        fields = ('is_primary',)
+        fields = ('patient', 'contact', 'is_primary')
+        extra_kwargs = {
+            'patient': {'required': False, 'write_only': True},
+            'contact': {'required': False, 'write_only': True},
+        }
 
     def create(self, validated_data):
+        validated_data.pop('patient', None)
+        validated_data.pop('contact', None)
         patient = self.context['patient']
         contact = self.context['contact']
         with transaction.atomic():
@@ -233,14 +239,23 @@ class PatientContactCreateSerializer(serializers.ModelSerializer):
 class PatientContactUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientContact
-        fields = ('is_primary',)
-        extra_kwargs = {'is_primary': {'required': False}}
+        fields = ('patient', 'contact', 'is_primary')
+        extra_kwargs = {
+            'patient': {'required': False, 'write_only': True},
+            'contact': {'required': False, 'write_only': True},
+            'is_primary': {'required': False},
+        }
 
     def update(self, instance, validated_data):
+        validated_data.pop('patient', None)
+        validated_data.pop('contact', None)
         with transaction.atomic():
             if validated_data.get('is_primary'):
                 PatientContact.objects.filter(patient=instance.patient).exclude(contact=instance.contact).update(is_primary=False)
-            return super().update(instance, validated_data)
+            is_primary = validated_data.get('is_primary', instance.is_primary)
+            PatientContact.objects.filter(patient_id=instance.patient_id, contact_id=instance.contact_id).update(is_primary=is_primary)
+            instance.is_primary = is_primary
+            return instance
 
 
 class PatientContactCreateWithContactSerializer(serializers.Serializer):
