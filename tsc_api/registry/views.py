@@ -392,7 +392,8 @@ class ContactCreateView(generics.CreateAPIView):
         if serializer.errors:
             logger.warning('Create contact serializer errors. errors=%s payload=%s', serializer.errors, dict(request.data))
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        return super().create(request, *args, **kwargs)
+        contact = serializer.save()
+        return Response(ContactReadSerializer(contact).data, status=status.HTTP_201_CREATED)
 
 
 class ContactDetailView(generics.RetrieveUpdateAPIView):
@@ -425,12 +426,16 @@ class ContactDetailView(generics.RetrieveUpdateAPIView):
 class PatientContactListCreateView(generics.ListCreateAPIView):
     serializer_class = PatientContactReadSerializer
 
+    def get_serializer_class(self):
+        return PatientContactCreateWithContactSerializer if self.request.method == 'POST' else PatientContactReadSerializer
+
     def get_queryset(self):
         return PatientContact.objects.filter(patient_id=self.kwargs['patient_id']).select_related('contact')
 
     @extend_schema(request=PatientContactCreateWithContactSerializer, responses={201: PatientContactReadSerializer})
-    def post(self, request, patient_id):
-        payload = PatientContactCreateWithContactSerializer(data=request.data)
+    def create(self, request, *args, **kwargs):
+        patient_id = kwargs['patient_id']
+        payload = self.get_serializer(data=request.data)
         payload.is_valid(raise_exception=True)
         patient = get_object_or_404(Patient, patient_id=patient_id)
 
